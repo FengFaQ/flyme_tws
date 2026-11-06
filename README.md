@@ -14,7 +14,15 @@
 
 # flyme_tws
 
-一个基于 **Xposed / LSPosed** 的 Android 模块（包名 `com.frost.tool`），用于让第三方品牌的 TWS 真无线耳机（vivo / iQOO、原道 NiceHCK、华为 FreeBuds / FreeClip / FreeLace）在 **魅族（Flyme）系统**上获得接近"官方耳机"的体验：控制中心卡片、快连弹窗、左右耳与充电仓电量、降噪模式切换，以及点击"更多设置"跳转到对应品牌的官方 App。
+一个基于 **LSPosed 现代 Xposed API（libxposed）** 的 Android 模块（applicationId `github.forest.tool.tws.io`），用于让第三方品牌的 TWS 真无线耳机（vivo / iQOO、原道 NiceHCK、华为 FreeBuds / FreeClip / FreeLace）在 **魅族（Flyme）系统**上获得接近"官方耳机"的体验：控制中心卡片、快连弹窗、左右耳与充电仓电量、降噪模式切换，以及点击"更多设置"跳转到对应品牌的官方 App。
+
+> **实现说明**：模块入口是 `github.forest.tool.tws.io.ModuleMain`，继承真实的
+> `io.github.libxposed.api.XposedModule`，由 `META-INF/xposed/java_init.list` +
+> `module.prop` + `scope.list` 声明，LSPosed 在作用域进程内实例化并回调
+> `onPackageReady` 完成 hook 注册。编译期以官方 `io.github.libxposed:api:102.0.0`
+> 的 `classes.jar` 作 `compileOnly`（运行时由框架提供，**不打进 APK**）；launcher
+> 通过官方 `service` 库绑定 `XposedService` 读写 remote preferences，使启用开关端到端可用。
+> 工作流内设有断言，校验入口元数据、包名以及"真实 API 未被打包"。
 
 ## 它做了什么
 
@@ -47,23 +55,30 @@
 ## 目录结构
 
 ```
-TWS/
-├── TwsActions.kt          进程间广播动作常量（协议契约）
-├── EarbudCatalog.kt       品牌 → 官方 App 登记表与设备名匹配
-├── BluetoothHook.kt       蓝牙进程：协议路由、RFCOMM 读循环、广播、快连弹窗
-├── GaiaProtocol.kt        GAIA 帧编解码（vivo 家族，电量 / 降噪 / 握手）
-├── NiceHckProtocol.kt     原道 0x4E 二进制帧协议
-├── HuaweiProtocol.kt      华为 0x5A + CRC16 帧协议
-├── MeizuTWS.kt            魅族耳机 App：注入假设备 / 电量、降噪回发
-├── MeizuiotTWS.kt         魅族智能家居 App：扫描放行、写电量数据库
-├── EarbudHook.kt          系统 UI：更多设置跳转、图标与间距调整
-└── MeizuFastPairPop.kt    快连弹窗构造（电量展示）
+app/src/main/
+├── java/github/forest/tool/tws/io/
+│   ├── ModuleMain.kt          ← 真实 XposedModule 入口（onPackageReady 分发）
+│   ├── ModuleSettings.kt      remote preferences 开关（默认启用）
+│   ├── App.kt / MainActivity.kt  launcher：通过 XposedService 写开关
+│   ├── utils/XLog.kt          走真实 module.log
+│   └── hook/TWS/              10 个原始 TWS 源码（协议 / 广播 / hook）
+│       ├── TwsActions.kt / EarbudCatalog.kt / BluetoothHook.kt
+│       ├── GaiaProtocol.kt / NiceHckProtocol.kt / HuaweiProtocol.kt
+│       ├── MeizuTWS.kt / MeizuiotTWS.kt / EarbudHook.kt / MeizuFastPairPop.kt
+├── resources/META-INF/xposed/
+│   ├── java_init.list         ← LSPosed 识别并加载 ModuleMain
+│   ├── module.prop            (minApiVersion=101, target=102, staticScope)
+│   └── scope.list             4 个目标进程
+├── AndroidManifest.xml        App + MainActivity + XposedProvider
+└── libs/                     官方 libxposed api/annotation/service/interface classes.jar
 ```
 
 ## 使用前提（简要）
 
-- 已 Root 并刷入 **LSPosed / Xposed** 框架；
-- 在模块设置中开启开关 `tws_device_spoof_enabled`（默认关闭）；
+- 已 Root 并刷入支持 **libxposed 现代 API（API 101+）** 的 LSPosed 框架；
+- 在 LSPosed 中启用本模块并勾选作用域（`scope.list` 已声明 4 个目标进程）；
+- launcher 内的「启用 / 关闭 伪装」开关通过 `XposedService` 写入 remote preferences
+  （group `frost_tool_prefs`，key `tws_device_spoof_enabled`，**默认启用**）；
 - 需对蓝牙进程、魅族耳机 App、魅族智能家居 App、系统 UI 等目标启用本模块；
 - 依赖各厂商私有蓝牙协议，不同机型 / 系统版本可能需要适配，**不保证通用**。
 
@@ -88,8 +103,10 @@ TWS/
 > 签名密钥：若配置了仓库 Secrets（`SIGNING_KEYSTORE_BASE64` 等）则用固定密钥；否则每次运行生成一份临时 CI 密钥，
 > 保证任何情况下都能得到可安装、且经过 v3 签名的产物。**私钥永不入库**。
 >
-> `io.github.libxposed.api.*` 框架 API 由 LSPosed 在运行时提供，工程中以 `compileOnly` 桩模块
-> （`:xposed-api`）参与编译，**不会打进 APK**。
+> 编译期依赖的是**官方发布的** `io.github.libxposed:api:102.0.0` / `annotation:1.0.0`
+> classes.jar（`compileOnly`，运行时由 LSPosed 提供，**不打进 APK**），以及
+> `service:102.0.0` / `interface:102.0.0`（launcher 侧开关，`implementation`）。
+> 工作流会断言：入口元数据存在、`applicationId` 正确、且真实 API 类**未**被打包进 APK。
 
 ## 开源协议
 

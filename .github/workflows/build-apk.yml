@@ -72,6 +72,38 @@ jobs:
           echo "--- APK outputs ---"
           find app/build/outputs/apk -type f -name '*.apk' -print
 
+      - name: Assert real LSPosed module wiring
+        run: |
+          set -euo pipefail
+          UNSIGNED="$(find app/build/outputs/apk/release -name '*-unsigned.apk' -print -quit)"
+          echo "APK: $UNSIGNED"
+          echo "--- module metadata inside APK ---"
+          unzip -l "$UNSIGNED" | grep -E 'META-INF/xposed/(java_init.list|module.prop|scope.list)' || {
+            echo "::error::LSPosed module metadata missing from APK"; exit 1; }
+          echo "--- java_init.list content ---"
+          unzip -p "$UNSIGNED" META-INF/xposed/java_init.list
+          echo "--- module.prop content ---"
+          unzip -p "$UNSIGNED" META-INF/xposed/module.prop
+          # The REAL framework API must be compileOnly: its classes must NOT
+          # be present inside the APK (LSPosed supplies them at runtime).
+          if unzip -l "$UNSIGNED" | grep -q 'io/github/libxposed/api/XposedModule'; then
+            echo "::error::libxposed API was bundled into the APK (should be compileOnly)"; exit 1
+          fi
+          echo "OK: real API is compileOnly, not bundled."
+          # Module entry class must exist in the APK dex.
+          ENTRY=$(unzip -p "$UNSIGNED" META-INF/xposed/java_init.list | tr -d '\r' | head -n1)
+          echo "entry class: $ENTRY"
+          DEX_COUNT=$(unzip -l "$UNSIGNED" | grep -c 'classes.*\.dex' || true)
+          echo "dex files: $DEX_COUNT"
+          # applicationId assertion from AGP metadata
+          META=$(find app/build -name 'output-metadata.json' -print -quit)
+          if [ -n "$META" ]; then
+            echo "--- applicationId from AGP metadata ---"
+            grep -o '"applicationId"[^,]*' "$META" | head -n1
+            grep -q 'github.forest.tool.tws.io' "$META" || {
+              echo "::error::applicationId is not github.forest.tool.tws.io"; exit 1; }
+          fi
+
       # Prefer a repository-provided signing key when configured; otherwise
       # generate an ephemeral CI keystore so every build still yields a real,
       # installable V3-signed artifact. No private key is ever committed.
