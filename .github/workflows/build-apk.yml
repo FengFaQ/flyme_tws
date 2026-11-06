@@ -84,17 +84,62 @@ jobs:
           unzip -p "$UNSIGNED" META-INF/xposed/java_init.list
           echo "--- module.prop content ---"
           unzip -p "$UNSIGNED" META-INF/xposed/module.prop
-          # The REAL framework API must be compileOnly: its classes must NOT
-          # be present inside the APK (LSPosed supplies them at runtime).
-          if unzip -l "$UNSIGNED" | grep -q 'io/github/libxposed/api/XposedModule'; then
-            echo "::error::libxposed API was bundled into the APK (should be compileOnly)"; exit 1
-          fi
-          echo "OK: real API is compileOnly, not bundled."
-          # Module entry class must exist in the APK dex.
+          # The REAL framework API must be compileOnly: its class DEFINITIONS
+          # must NOT be in classes.dex. A plain string grep is NOT enough --
+          # "Lio/github/libxposed/api/XposedModule;" always appears as a type
+          # reference (ModuleMain extends XposedModule). We parse the dex
+          # class_defs table and assert on actual class definitions.
+          python3 - "$UNSIGNED" <<'PY'
+import struct, sys, zipfile
+apk = sys.argv[1]
+with zipfile.ZipFile(apk) as z:
+    dex = z.read("classes.dex")
+u32 = lambda o: struct.unpack_from("<I", dex, o)[0]
+s_size, s_off = u32(0x38), u32(0x3C)
+t_size, t_off = u32(0x40), u32(0x44)
+c_size, c_off = u32(0x60), u32(0x64)
+
+def uleb(o):
+    r = s = 0
+    while True:
+        b = dex[o]; o += 1; r |= (b & 0x7F) << s
+        if not (b & 0x80): return r, o
+        s += 7
+
+def string_at(i):
+    n, p = uleb(u32(s_off + 4 * i))
+    return dex[p:p + n].decode("utf-8", "replace")
+
+def type_name(i):
+    return string_at(u32(t_off + 4 * i))
+
+defs = {type_name(u32(c_off + 32 * k)) for k in range(c_size)}
+print("class_defs:", c_size)
+
+REQUIRED_PRESENT = [
+    "Lgithub/forest/tool/tws/io/ModuleMain;",
+    "Lgithub/forest/tool/tws/io/hook/TWS/BluetoothHook;",
+    "Lio/github/libxposed/service/XposedService;",
+]
+REQUIRED_ABSENT = [
+    "Lio/github/libxposed/api/XposedModule;",
+    "Lio/github/libxposed/api/XposedInterfaceWrapper;",
+]
+bad = False
+for d in REQUIRED_PRESENT:
+    print(("  OK   present: " if d in defs else "  FAIL missing: ") + d)
+    bad |= d not in defs
+for d in REQUIRED_ABSENT:
+    print(("  FAIL bundled: " if d in defs else "  OK   absent : ") + d)
+    bad |= d in defs
+if bad:
+    print("::error::APK class definitions do not match the real-API contract")
+    sys.exit(1)
+print("OK: real API is compileOnly (definitions absent); module + service present.")
+PY
+          # Module entry class must match java_init.list.
           ENTRY=$(unzip -p "$UNSIGNED" META-INF/xposed/java_init.list | tr -d '\r' | head -n1)
           echo "entry class: $ENTRY"
-          DEX_COUNT=$(unzip -l "$UNSIGNED" | grep -c 'classes.*\.dex' || true)
-          echo "dex files: $DEX_COUNT"
           # applicationId assertion from AGP metadata
           META=$(find app/build -name 'output-metadata.json' -print -quit)
           if [ -n "$META" ]; then
