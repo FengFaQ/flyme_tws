@@ -100,8 +100,17 @@ app/src/main/
 > 此时 `apksigner` 会生成**纯 v3 签名**（验证结果 `v3: true`，`v1/v2: false`）——因为 v3 已覆盖
 > 全部受支持版本，v1/v2 被自动判定为冗余而省略。
 
+### 自动发布到 Releases
+
+每次**成功**的构建都会自动创建一条 GitHub Release（tag 形如 `v1.0.<run_number>`，每次运行唯一），
+并附上带版本号的 V3 签名 APK 与 `apksigner-verify.txt`。重跑同一 run 号时幂等覆盖该 Release 资产。
+Release 说明里会注明「本项目完全由 AI 生成」以及签名密钥注意事项。
+
 > 签名密钥：若配置了仓库 Secrets（`SIGNING_KEYSTORE_BASE64` 等）则用固定密钥；否则每次运行生成一份临时 CI 密钥，
 > 保证任何情况下都能得到可安装、且经过 v3 签名的产物。**私钥永不入库**。
+>
+> ⚠️ 使用临时密钥时，不同 Release 的 APK 签名不同，**无法互相覆盖安装**（需先卸载旧版）；
+> 配置固定密钥后可正常覆盖升级。
 >
 > 编译期依赖的是**官方发布的** `io.github.libxposed:api:102.0.0` / `annotation:1.0.0`
 > classes.jar（`compileOnly`，运行时由 LSPosed 提供，**不打进 APK**），以及

@@ -12,7 +12,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # Required to create the GitHub Release and upload the signed APK.
+  contents: write
 
 env:
   ANDROID_COMPILE_SDK: '34'
@@ -203,3 +204,64 @@ jobs:
             apksigner-verify.txt
           if-no-files-found: error
           retention-days: 30
+
+      # Every successful build is published as its own GitHub Release.
+      # Tag is derived from the run number so each build gets a unique,
+      # immutable version; re-running a run (or workflow_dispatch) is idempotent
+      # because gh release create --clobber replaces the same tag's assets.
+      - name: Publish signed APK to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v1.0.${GITHUB_RUN_NUMBER}"
+          TITLE="flyme_tws ${TAG} — V3-signed APK"
+          APK="$GITHUB_WORKSPACE/flyme_tws-v3-signed.apk"
+          VERIFY="$GITHUB_WORKSPACE/apksigner-verify.txt"
+
+          # Rename the asset with the version so it is unambiguous in Releases.
+          ASSET="$GITHUB_WORKSPACE/flyme_tws-${TAG}-v3-signed.apk"
+          cp "$APK" "$ASSET"
+
+          {
+            echo "## flyme_tws ${TAG}"
+            echo ""
+            echo "自动构建产物：由 GitHub Actions 在每次成功编译后发布。"
+            echo ""
+            echo "- **应用包名**：github.forest.tool.tws.io"
+            echo "- **签名**：APK Signature Scheme **v3**（纯 v3；minSdk 28+ 下 v1/v2 冗余被省略）"
+            echo "- **模块类型**：LSPosed 现代 Xposed API（libxposed 102）模块"
+            echo "- **Commit**：${GITHUB_SHA}"
+            echo "- **构建**：run #${GITHUB_RUN_NUMBER}"
+            echo ""
+            echo "### 重要说明"
+            echo "- 本项目**完全由 AI 生成**，未经完整人工审计与真机验证，请勿用于主力设备。"
+            echo "- 未配置固定签名密钥时，每次 CI 运行都会生成**临时密钥**，不同 Release 的 APK"
+            echo "  签名不同、**无法互相覆盖安装**（需先卸载旧版）。如需可覆盖升级，请配置"
+            echo "  Secrets（SIGNING_KEYSTORE_BASE64 等）使用固定密钥。"
+            echo "- 采用 **AGPL-3.0** 协议。"
+            echo ""
+            echo "附：apksigner-verify.txt 为签名验证记录。"
+          } > "$GITHUB_WORKSPACE/release-notes.md"
+
+          # Idempotent: if the tag already exists (e.g. re-run), replace assets.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG exists -> uploading/overwriting assets"
+            gh release upload "$TAG" "$ASSET" "$VERIFY" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$TITLE" --notes-file "$GITHUB_WORKSPACE/release-notes.md"
+          else
+            echo "Creating Release $TAG"
+            gh release create "$TAG" "$ASSET" "$VERIFY" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TITLE" \
+              --notes-file "$GITHUB_WORKSPACE/release-notes.md" \
+              --target "$GITHUB_SHA"
+          fi
+
+          echo "Published: $(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
+          {
+            echo ""
+            echo "### 📦 Release: [${TAG}](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG})"
+          } >> "$GITHUB_STEP_SUMMARY"
