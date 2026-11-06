@@ -13,7 +13,7 @@ import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import com.frost.tool.utils.XLog
 
-/**
+/* 
  * 魅族系统 UI / 控制中心 hook。
  * 1. [hookMoreButton]：耳机卡片"更多设置"→ 参考 openControlApp 打开对应品牌官方 app，
  *    未装/未识别时兜底系统蓝牙设备详情页。

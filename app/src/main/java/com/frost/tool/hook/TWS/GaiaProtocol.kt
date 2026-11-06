@@ -1,6 +1,6 @@
 package com.frost.tool.hook.TWS
 
-/**
+/* 
  * 通用 GAIA-shaped 私有协议编解码层，与品牌无关：
  * 帧版本、vendor、命令号、载荷后缀等字节级差异收进 [BrandConfig]，业务代码不感知品牌。
  * 帧布局：[0xFF, version, flags, len, vendor(2), command(2), payload...]，运行于经典 RFCOMM。
@@ -43,7 +43,7 @@ object GaiaProtocol {
         internal val vendor: Int,
         internal val setNoiseSuffix: ByteArray,
     ) {
-        /**
+        /* 
          * vivo 家族默认（参考 HyperEars FAMILY_DEFAULT_V4）：
          * 版本 v4，vendor 0x001B，设置降噪后缀 [3, 1]。
          */
@@ -54,7 +54,7 @@ object GaiaProtocol {
             setNoiseSuffix = byteArrayOf(3, 1),
         ),
 
-        /**
+        /* 
          * vivo TWS Air3 Pro（参考 HyperEars AIR3_PRO_CAPTURED）：
          * 版本 v3，vendor 0x001B，设置降噪后缀 [4, 0]。
          */
@@ -65,7 +65,7 @@ object GaiaProtocol {
             setNoiseSuffix = byteArrayOf(4, 0),
         ),
 
-        /**
+        /* 
          * vivo TWS 3e（参考 HyperEars TWS_3E_V3）：
          * 版本 v3，vendor 0x001B，设置降噪后缀 [3]。
          */
@@ -134,7 +134,7 @@ object GaiaProtocol {
         command = QUERY_BATTERY,
     )
 
-    /** 设置降噪模式：命令 0x0130，载荷 = [模式线值] + 品牌后缀。 */
+    /*  设置降噪模式：命令 0x0130，载荷 = [模式线值] + 品牌后缀。 */
     fun setNoiseMode(mode: NoiseMode, config: BrandConfig): ByteArray = frame(
         version = config.gaiaVersion,
         vendor = config.vendor,
@@ -146,7 +146,7 @@ object GaiaProtocol {
     // ========== 响应解析 ==========
     // ========================================================================
 
-    /** 解析电量上报（0x8207）：载荷 [0, left, right, case, charging]。 */
+    /*  解析电量上报（0x8207）：载荷 [0, left, right, case, charging]。 */
     fun parseBatteryState(frame: Frame, config: BrandConfig): BatteryState? {
         if (frame.vendor != config.vendor || frame.command != REPORT_BATTERY) return null
         if (frame.payload.size < 5 || frame.payload[0].unsigned() != 0) return null
@@ -161,7 +161,7 @@ object GaiaProtocol {
         )
     }
 
-    /** 解析降噪 ACK（0x8130）/ 上报（0x8230）：载荷 [0, mode, ...]。 */
+    /*  解析降噪 ACK（0x8130）/ 上报（0x8230）：载荷 [0, mode, ...]。 */
     fun parseNoiseState(frame: Frame, config: BrandConfig): NoiseState? {
         if (frame.vendor != config.vendor) return null
         val acknowledged = when (frame.command) {

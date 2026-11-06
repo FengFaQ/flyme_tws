@@ -1,6 +1,6 @@
 package com.frost.tool.hook.TWS
 
-/**
+/* 
  * 华为 FreeBuds / FreeClip 的 SPP 私有协议（参考 HyperEars HuaweiFreebudsSppCodec）。
  * 帧：[0x5A] [len:2BE] [0x00] [cmd:2] [TLV...] [crc16:2]，CRC16/XMODEM 覆盖前 n-2 字节。
  */

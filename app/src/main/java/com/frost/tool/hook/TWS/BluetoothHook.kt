@@ -15,7 +15,7 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import com.frost.tool.utils.XLog
 import java.util.UUID
 
-/**
+/* 
  * 蓝牙进程 hook：注册广播、维护当前设备、按品牌协议常驻读循环（电量）+ 降噪写帧。
  * 支持的品牌协议：vivo（GAIA）、原道 OriG in（NiceHck 二进制 RFCOMM）。
  * 品牌差异集中在 [ProtocolKind] 路由。

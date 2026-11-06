@@ -20,7 +20,7 @@ open class XposedModule {
     fun getRemotePreferences(name: String): RemotePreferences = RemotePreferences()
 }
 
-/** Fluent builder returned by [XposedModule.hook]. */
+/*  Fluent builder returned by [XposedModule.hook]. */
 class HookBuilder {
     fun intercept(callback: (HookChain) -> Any?) {
         // no-op at compile time; registered by the framework at runtime

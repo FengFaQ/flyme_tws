@@ -1,6 +1,6 @@
 package com.frost.tool.hook.TWS
 
-/**
+/* 
  * 原道 NiceHCK / 原道 OriG in 的二进制 RFCOMM 私有协议（参考 HyperEars NiceHckWireCodec）。
  * 帧格式：[0x4E(MARKER), lenLo, lenHi, 0, opcodeLo, opcodeHi, payload...]，opcode 小端。
  */

@@ -1,6 +1,6 @@
 package com.frost.tool.hook.TWS
 
-/**
+/* 
  * 品牌耳机 → 官方控制 app 登记表（仅保留本模块实现了私有协议的品牌）。
  * 根据设备名匹配品牌，从候选 app 挑已安装的打开。新增品牌只需加一条 [CatalogEntry]。
  * 设备名匹配统一 normalize：小写 + 去非字母数字（中文保留）。

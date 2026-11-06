@@ -10,7 +10,7 @@ import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import com.frost.tool.utils.XLog
 
-/**
+/* 
  * 魅族耳机 app（com.meizu.earphone）hook。
  * 消费蓝牙进程 [BluetoothHook] 的设备信息/电量广播，把 vivo 耳机包装成魅族“官方”设备显示，
  * 并拦截降噪切换转发回蓝牙进程走 GAIA。佩戴检测强制已佩戴（控制中心切模式需要）。
