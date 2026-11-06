@@ -22,12 +22,12 @@ class App : Application(), XposedServiceHelper.OnServiceListener {
     }
 
     override fun onServiceBind(service: XposedService) {
-        this.service = service
+        setService(service)
         listeners.forEach { it.onServiceStateChanged(service) }
     }
 
     override fun onServiceDied(service: XposedService) {
-        this.service = null
+        setService(null)
         listeners.forEach { it.onServiceStateChanged(null) }
     }
 
@@ -37,6 +37,10 @@ class App : Application(), XposedServiceHelper.OnServiceListener {
             private set
 
         private val listeners = CopyOnWriteArraySet<ServiceStateListener>()
+
+        private fun setService(s: XposedService?) {
+            service = s
+        }
 
         fun addListener(l: ServiceStateListener, notifyNow: Boolean) {
             listeners.add(l)
