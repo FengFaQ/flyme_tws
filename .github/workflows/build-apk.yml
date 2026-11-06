@@ -120,6 +120,8 @@ jobs:
       - name: Sign with APK Signature Scheme v3
         run: |
           set -euo pipefail
+          # minSdk 28 + v3 enabled => apksigner emits a pure v3 signature
+          # (it auto-disables v1/v2 as redundant since v3 covers 28+ fully).
           apksigner sign \
             --ks "$KEYSTORE_PATH" \
             --ks-key-alias "$KS_ALIAS" \
@@ -158,7 +160,7 @@ jobs:
             echo "| Artifact | \`flyme_tws-v3-signed.apk\` |"
             echo "| Commit | \`${GITHUB_SHA::7}\` |"
             echo "| SDK | compileSdk ${ANDROID_COMPILE_SDK}, build-tools ${ANDROID_BUILD_TOOLS} |"
-            echo "| Signature | APK Signature Scheme **v3** (v2 kept as compatibility layer) |"
+            echo "| Signature | APK Signature Scheme **v3** (pure v3; v1/v2 omitted as redundant at minSdk 28+) |"
             echo ""
             echo "\`\`\`"
             grep -E '^Verified using v[123]' apksigner-verify.txt || true

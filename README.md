@@ -78,11 +78,12 @@ TWS/
 - 工具链：JDK 17 · Gradle 8.2 · AGP 8.1.4 · Kotlin 1.9.22 · compileSdk 34 / build-tools 34.0.0。
 
 流程：`:app:assembleRelease` 生成未签名包 → `zipalign -p 4` → 用 `apksigner` 以
-`--v3-signing-enabled true` 签名（`--min-sdk-version 28`，v2 同时保留作兼容层，关闭 v1）→
-`apksigner verify` 断言 **v3 签名块确实存在** → 上传 `flyme_tws-v3-signed.apk` 为构建产物。
+`--v3-signing-enabled true --min-sdk-version 28` 签名 → `apksigner verify` 断言
+**v3 签名块确实存在** → 上传 `flyme_tws-v3-signed.apk` 为构建产物。
 
-> 说明：APK 签名方案 v3 原生适用于 Android 9（API 28）及以上，因此工程把 `minSdk` 设为 28，
-> 以确保 `apksigner` 确实生成 v3 签名块（而非仅有 v2）。
+> 说明：APK 签名方案 v3 原生适用于 Android 9（API 28）及以上，因此工程把 `minSdk` 设为 28。
+> 此时 `apksigner` 会生成**纯 v3 签名**（验证结果 `v3: true`，`v1/v2: false`）——因为 v3 已覆盖
+> 全部受支持版本，v1/v2 被自动判定为冗余而省略。
 
 > 签名密钥：若配置了仓库 Secrets（`SIGNING_KEYSTORE_BASE64` 等）则用固定密钥；否则每次运行生成一份临时 CI 密钥，
 > 保证任何情况下都能得到可安装、且经过 v3 签名的产物。**私钥永不入库**。
