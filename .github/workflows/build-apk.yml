@@ -1,0 +1,168 @@
+name: Build V3-signed APK
+
+# Pushing to main activates the build automatically; workflow_dispatch allows
+# a manual re-run from the Actions tab.
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ANDROID_COMPILE_SDK: '34'
+  ANDROID_BUILD_TOOLS: '34.0.0'
+  GRADLE_VERSION: '8.2'
+
+jobs:
+  build:
+    name: Assemble + APK Signature Scheme v3
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Deterministic Gradle install (no wrapper jar committed to the repo).
+      - name: Install Gradle ${{ env.GRADLE_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/gradle.zip" \
+            "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP/gradle"
+          echo "$RUNNER_TEMP/gradle/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/gradle/gradle-${GRADLE_VERSION}/bin/gradle" --version
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "platform-tools"
+          echo "$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}" >> "$GITHUB_PATH"
+
+      - name: Assemble unsigned release APK
+        run: |
+          set -euo pipefail
+          gradle :app:assembleRelease --no-daemon --stacktrace
+          echo "--- APK outputs ---"
+          find app/build/outputs/apk -type f -name '*.apk' -print
+
+      # Prefer a repository-provided signing key when configured; otherwise
+      # generate an ephemeral CI keystore so every build still yields a real,
+      # installable V3-signed artifact. No private key is ever committed.
+      - name: Prepare signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SECRET_STOREPASS: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SECRET_KEYPASS: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SECRET_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          KS="$RUNNER_TEMP/release.jks"
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            echo "Using repository signing keystore from secrets."
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$KS"
+            echo "KS_STOREPASS=${SECRET_STOREPASS}" >> "$GITHUB_ENV"
+            echo "KS_KEYPASS=${SECRET_KEYPASS}"   >> "$GITHUB_ENV"
+            echo "KS_ALIAS=${SECRET_ALIAS}"       >> "$GITHUB_ENV"
+          else
+            echo "No signing secret configured -> generating an ephemeral CI keystore."
+            keytool -genkeypair -v \
+              -keystore "$KS" \
+              -alias flyme_tws \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=FrostTool TWS, OU=AI Generated, O=FrostTool, L=NA, ST=NA, C=CN"
+            echo "KS_STOREPASS=android" >> "$GITHUB_ENV"
+            echo "KS_KEYPASS=android"   >> "$GITHUB_ENV"
+            echo "KS_ALIAS=flyme_tws"   >> "$GITHUB_ENV"
+          fi
+          echo "KEYSTORE_PATH=$KS" >> "$GITHUB_ENV"
+          ls -l "$KS"
+
+      # zipalign must run BEFORE apksigner, otherwise v2/v3 blocks are invalidated.
+      - name: Zipalign
+        run: |
+          set -euo pipefail
+          UNSIGNED="$(find app/build/outputs/apk/release -name '*-unsigned.apk' -print -quit)"
+          if [ -z "$UNSIGNED" ]; then
+            echo "::error::unsigned release APK not found"; exit 1
+          fi
+          zipalign -p -f 4 "$UNSIGNED" "$RUNNER_TEMP/aligned.apk"
+          echo "Aligned: $UNSIGNED"
+          echo "UNSIGNED_APK=$UNSIGNED" >> "$GITHUB_ENV"
+
+      - name: Sign with APK Signature Scheme v3
+        run: |
+          set -euo pipefail
+          apksigner sign \
+            --ks "$KEYSTORE_PATH" \
+            --ks-key-alias "$KS_ALIAS" \
+            --ks-pass "pass:$KS_STOREPASS" \
+            --key-pass "pass:$KS_KEYPASS" \
+            --v1-signing-enabled false \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --min-sdk-version 28 \
+            --out "$GITHUB_WORKSPACE/flyme_tws-v3-signed.apk" \
+            "$RUNNER_TEMP/aligned.apk"
+          ls -lh "$GITHUB_WORKSPACE/flyme_tws-v3-signed.apk"
+
+      - name: Verify V3 signature
+        run: |
+          set -euo pipefail
+          apksigner verify --verbose --print-certs \
+            "$GITHUB_WORKSPACE/flyme_tws-v3-signed.apk" | tee apksigner-verify.txt
+          echo "--- asserting APK Signature Scheme v3 ---"
+          # apksigner wording varies across build-tools releases
+          # ("v3 scheme", "v3.1 scheme", "(APK Signature Scheme v3)").
+          # Accept any v3/v3.1 line whose result is true, but require at least one.
+          if ! grep -Ei 'v3(\.1)? scheme.*: true' apksigner-verify.txt; then
+            echo "::error::APK Signature Scheme v3 block was not produced"; exit 1
+          fi
+          echo "V3 signature block confirmed."
+
+      - name: Job summary
+        run: |
+          set -euo pipefail
+          {
+            echo "### ✅ V3-signed APK built"
+            echo ""
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Artifact | \`flyme_tws-v3-signed.apk\` |"
+            echo "| Commit | \`${GITHUB_SHA::7}\` |"
+            echo "| SDK | compileSdk ${ANDROID_COMPILE_SDK}, build-tools ${ANDROID_BUILD_TOOLS} |"
+            echo "| Signature | APK Signature Scheme **v3** (v2 kept as compatibility layer) |"
+            echo ""
+            echo "\`\`\`"
+            grep -E '^Verified using v[123]' apksigner-verify.txt || true
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: flyme_tws-v3-signed
+          path: |
+            flyme_tws-v3-signed.apk
+            apksigner-verify.txt
+          if-no-files-found: error
+          retention-days: 30

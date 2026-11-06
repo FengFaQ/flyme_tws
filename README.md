@@ -69,6 +69,27 @@ TWS/
 
 > 本项目仅供学习与技术研究使用，请勿用于违反设备厂商条款或侵犯他人权益的场景。
 
+## 构建与 V3 签名（GitHub Actions）
+
+本项目附带一个可复现的 Android Gradle 工程与 CI 工作流，用于**编译出带 APK 签名方案 v3 的 APK 产物**。
+
+- 工作流文件：[.github/workflows/build-apk.yml](./.github/workflows/build-apk.yml)
+- 触发方式：推送到 `main`（或 Actions 页手动 `workflow_dispatch`）即自动激活编译。
+- 工具链：JDK 17 · Gradle 8.2 · AGP 8.1.4 · Kotlin 1.9.22 · compileSdk 34 / build-tools 34.0.0。
+
+流程：`:app:assembleRelease` 生成未签名包 → `zipalign -p 4` → 用 `apksigner` 以
+`--v3-signing-enabled true` 签名（`--min-sdk-version 28`，v2 同时保留作兼容层，关闭 v1）→
+`apksigner verify` 断言 **v3 签名块确实存在** → 上传 `flyme_tws-v3-signed.apk` 为构建产物。
+
+> 说明：APK 签名方案 v3 原生适用于 Android 9（API 28）及以上，因此工程把 `minSdk` 设为 28，
+> 以确保 `apksigner` 确实生成 v3 签名块（而非仅有 v2）。
+
+> 签名密钥：若配置了仓库 Secrets（`SIGNING_KEYSTORE_BASE64` 等）则用固定密钥；否则每次运行生成一份临时 CI 密钥，
+> 保证任何情况下都能得到可安装、且经过 v3 签名的产物。**私钥永不入库**。
+>
+> `io.github.libxposed.api.*` 框架 API 由 LSPosed 在运行时提供，工程中以 `compileOnly` 桩模块
+> （`:xposed-api`）参与编译，**不会打进 APK**。
+
 ## 开源协议
 
 本项目采用 **GNU Affero General Public License v3.0（AGPL-3.0）** 开源，详见 [LICENSE](./LICENSE)。

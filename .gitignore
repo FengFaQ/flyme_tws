@@ -1,0 +1,13 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild
+.cxx/
+# Ephemeral CI signing keystore — never commit a real keystore
+*.jks
+*.keystore
+app/release.jks
