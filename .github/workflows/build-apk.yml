@@ -44,18 +44,26 @@ jobs:
           echo "$RUNNER_TEMP/gradle/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/gradle/gradle-${GRADLE_VERSION}/bin/gradle" --version
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
+      # GitHub-hosted runners already ship an Android SDK. The
+      # android-actions/setup-android action calls `sdkmanager tools` (the
+      # legacy "tools" package, since removed) and fails on current images,
+      # so we use the preinstalled SDK directly instead.
+      - name: Set up Android SDK packages
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager --install \
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit 2>/dev/null || true)"
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "sdkmanager=$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" --install \
             "platforms;android-${ANDROID_COMPILE_SDK}" \
             "build-tools;${ANDROID_BUILD_TOOLS}" \
             "platform-tools"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}" >> "$GITHUB_PATH"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
 
       - name: Assemble unsigned release APK
         run: |
